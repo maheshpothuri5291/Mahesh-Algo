@@ -11,6 +11,12 @@ Environment=REGISTER_PORT=8420
 # Persistent, outside the app checkout so a redeploy (git pull / re-copy) never
 # touches the data file. Create this directory once: sudo mkdir -p /var/lib/register-app
 Environment=REGISTER_DB_PATH=/var/lib/register-app/register.db
+# Optional login page. Leave both unset to run with no auth wall (local-dev default).
+# Set a real REGISTER_SECRET_KEY too (e.g. `openssl rand -hex 32`) — omitting it
+# falls back to a hash of the credentials, which works but is weaker.
+#Environment=REGISTER_AUTH_USER=changeme
+#Environment=REGISTER_AUTH_PASS=changeme
+#Environment=REGISTER_SECRET_KEY=changeme
 ExecStart=/opt/register-app/venv/bin/python /opt/register-app/main.py
 Restart=on-failure
 RestartSec=3

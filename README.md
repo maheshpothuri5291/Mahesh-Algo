@@ -45,6 +45,9 @@ same code runs locally or on a server unchanged:
 | `REGISTER_PORT` | `8420` | Port to listen on |
 | `REGISTER_DB_PATH` | `register.db` next to `main.py` | SQLite file location — point this at a persistent path outside the app checkout so redeploys never touch your data |
 | `REGISTER_CORS_ORIGINS` | `*` | Comma-separated allowed origins; narrow this if the API is reachable from other origins |
+| `REGISTER_AUTH_USER` / `REGISTER_AUTH_PASS` | unset (no login wall) | Set both to require sign-in via a login page before any board/API access |
+| `REGISTER_SECRET_KEY` | hash of the above | Signs the session cookie; set explicitly (e.g. `openssl rand -hex 32`) rather than relying on the credential-derived fallback |
+| `REGISTER_COOKIE_SECURE` | `0` | Set to `1` once served over HTTPS, so the session cookie gets the `Secure` flag |
 
 Steps:
 
@@ -67,8 +70,9 @@ live data outside that folder) and `sudo systemctl restart register-app`.
 
 ## Notes
 
-- Single-user, no authentication — put it behind nginx + a VPN/IP allowlist
-  or basic auth if it's reachable from the open internet.
+- Single-user. No login wall by default — set `REGISTER_AUTH_USER`/`REGISTER_AUTH_PASS`
+  (see table above) to require sign-in, or put it behind nginx + a VPN/IP allowlist
+  if it's reachable from the open internet.
 - `sqlite3`'s WAL mode is enabled, so concurrent reads/writes from a couple of
   browser tabs are fine; this isn't built for high-concurrency multi-team use.
 - The app was renamed from "The Register" to "Trackers" in the UI, page title,
