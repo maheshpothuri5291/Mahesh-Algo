@@ -13,7 +13,6 @@ directory outside the app checkout, so `git pull` / redeploy never touches
 it), REGISTER_HOST=0.0.0.0, REGISTER_PORT as needed, and put this behind
 nginx/systemd — see deploy/register-app.service and README.md.
 """
-import csv
 import hashlib
 import hmac
 import io
@@ -28,6 +27,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 from pydantic import BaseModel
 
 BASE_DIR = Path(__file__).parent
@@ -58,6 +59,10 @@ TYPE_META = {
     "tasks":         {"code": "TSK", "fields": ["summary", "description", "assignee", "status", "comments"]},
     "issues":        {"code": "ISS", "fields": ["summary", "description", "assignee", "status", "comments"]},
     "brainstorming": {"code": "BRN", "fields": ["summary", "description", "mom"]},
+}
+FIELD_LABELS = {
+    "summary": "Summary", "description": "Description", "assignee": "Assignee",
+    "status": "Status", "comments": "Comments", "mom": "MOM",
 }
 
 
@@ -103,6 +108,10 @@ def init_db():
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )""")
+        # One-time migration: the assignee dropdown's "None" option was renamed
+        # to "Unassigned" — normalize any rows written before that change.
+        conn.execute("UPDATE tasks SET assignee='Unassigned' WHERE assignee='None'")
+        conn.execute("UPDATE issues SET assignee='Unassigned' WHERE assignee='None'")
         conn.commit()
 
 
@@ -294,40 +303,40 @@ def logout():
     return resp
 
 
-@app.get("/api/export.csv")
-def export_csv():
-    """One combined CSV across all three boards — a 'Tab' column identifies
-    which board each row came from, per the union of all boards' fields.
+@app.get("/api/export.xlsx")
+def export_excel():
+    """One workbook, one sheet per board — sheet name is the board's Tab name
+    (Tasks / Issues / Brainstorming), columns are that board's own fields.
 
     Registered ahead of GET /api/{type_} below: Starlette matches routes in
     declaration order, and {type_} is a single path segment that would
-    otherwise swallow "export.csv" as an (invalid) board name."""
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(["Tab", "ID", "Summary", "Description", "Assignee", "Status",
-                      "Comments", "MOM", "Created", "Updated"])
+    otherwise swallow "export.xlsx" as an (invalid) board name."""
+    wb = Workbook()
+    wb.remove(wb.active)  # drop the default blank sheet
     with get_conn() as conn:
         for type_, meta in TYPE_META.items():
+            ws = wb.create_sheet(title=type_.capitalize())
+            fields = meta["fields"]
+            headers = ["ID"] + [FIELD_LABELS[f] for f in fields] + ["Created", "Updated"]
+            ws.append(headers)
+            widths = [max(len(h), 12) for h in headers]
             rows = conn.execute(f"SELECT * FROM {type_} ORDER BY id").fetchall()
             for row in rows:
-                keys = row.keys()
-                writer.writerow([
-                    type_.capitalize(),
-                    _code(type_, row["id"]),
-                    row["summary"],
-                    row["description"],
-                    row["assignee"] if "assignee" in keys else "",
-                    row["status"] if "status" in keys else "",
-                    row["comments"] if "comments" in keys else "",
-                    row["mom"] if "mom" in keys else "",
-                    row["created_at"],
-                    row["updated_at"],
-                ])
+                values = [_code(type_, row["id"])] + [row[f] for f in fields] + [row["created_at"], row["updated_at"]]
+                ws.append(values)
+                for i, v in enumerate(values):
+                    widths[i] = max(widths[i], len(str(v or "")))
+            for i, w in enumerate(widths, start=1):
+                ws.column_dimensions[get_column_letter(i)].width = min(w + 2, 60)
+            ws.freeze_panes = "A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
     stamp = datetime.now().strftime("%Y-%m-%d")
     return StreamingResponse(
-        iter([buf.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="trackers-{stamp}.csv"'},
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="trackers-{stamp}.xlsx"'},
     )
 
 

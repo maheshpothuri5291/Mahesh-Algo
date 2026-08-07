@@ -6,7 +6,7 @@ A local tracker for **Tasks**, **Issues**, and **Brainstorming** — FastAPI bac
 SQLite storage, a single-page vanilla-JS frontend. Independent of the algo_app
 trading system in the rest of this repo; nothing here touches it.
 
-- **Tasks** / **Issues** — Summary, Description, Assignee (dropdown: None / Naresh /
+- **Tasks** / **Issues** — Summary, Description, Assignee (dropdown: Unassigned / Naresh /
   Sandeep / Kishore / Mahesh), Status, Comments
 - **Brainstorming** — Summary, Description, MOM (Minutes of Meeting)
 
@@ -16,10 +16,10 @@ right-hand panel to view/edit — changes save only when you click **Save**.
 **+ Create** opens a form in a popup, pre-filled with each board's default status
 (Not Started for Tasks, Open for Issues); the record is written only when you
 click **Create** there. Tasks and Issues each have a status filter (chips) and
-an assignee filter (dropdown, default All) above their list. **Export CSV**
-downloads all three boards combined into one file, with a `Tab` column marking
-which board each row came from. Drag the thin dividers between the sidebar,
-list, and detail panel to resize them.
+an assignee filter (dropdown, default All) above their list. **Export Excel**
+downloads a workbook with one sheet per board (Tasks / Issues / Brainstorming),
+named after that board. Drag the thin dividers between the sidebar, list, and
+detail panel to resize them.
 
 ## Run locally
 

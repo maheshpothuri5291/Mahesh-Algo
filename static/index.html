@@ -426,7 +426,7 @@
         <button class="side-tab" data-type="brainstorming" type="button">Brainstorming <span class="count" id="count-brainstorming">0</span></button>
       </nav>
       <div class="sidebar-foot">
-        <a class="btn ghost full" href="/api/export.csv">Export CSV</a>
+        <a class="btn ghost full" href="/api/export.xlsx">Export Excel</a>
         <a class="btn ghost full" id="logout-link" href="/logout">Log out</a>
       </div>
     </aside>
@@ -496,7 +496,7 @@
     issues: ["Open", "Investigating", "In Progress", "Resolved"]
   };
   var DEFAULT_STATUS = { tasks: "Not Started", issues: "Open" };
-  var ASSIGNEE_OPTIONS = ["None", "Naresh", "Sandeep", "Kishore", "Mahesh"];
+  var ASSIGNEE_OPTIONS = ["Unassigned", "Naresh", "Sandeep", "Kishore", "Mahesh"];
 
   var activeType = "tasks";
   var itemsByType = { tasks: [], issues: [], brainstorming: [] };
@@ -743,7 +743,7 @@
     if (aFilter && aFilter !== "all") {
       items = items.filter(function (item) {
         var a = (item.assignee || "").trim();
-        return aFilter === "None" ? (a === "" || a === "None") : a === aFilter;
+        return aFilter === "Unassigned" ? (a === "" || a === "Unassigned") : a === aFilter;
       });
     }
 
@@ -762,7 +762,7 @@
       var updatedEl = el("span", { class: "row-updated ts", text: formatRelative(item.updated_at) });
       var leftGroup;
       if (hasStatus) {
-        var assigneeEl = el("span", { class: "row-assignee", text: item.assignee || "None" });
+        var assigneeEl = el("span", { class: "row-assignee", text: item.assignee || "Unassigned" });
         var chipEl = el("span", { class: "chip st-" + statusVariant(item.status), text: item.status || "no status" });
         leftGroup = el("div", { class: "row-meta-left" }, [assigneeEl, chipEl]);
       } else {
@@ -922,7 +922,7 @@
     modalDraft = {};
     TYPE_META[activeType].fields.forEach(function (f) { modalDraft[f] = ""; });
     if (DEFAULT_STATUS[activeType] !== undefined) modalDraft.status = DEFAULT_STATUS[activeType];
-    if (TYPE_META[activeType].fields.indexOf("assignee") !== -1) modalDraft.assignee = "None";
+    if (TYPE_META[activeType].fields.indexOf("assignee") !== -1) modalDraft.assignee = "Unassigned";
 
     var titleWord = TYPE_META[activeType].label.replace(/s$/, "");
     document.getElementById("modal-title").textContent = "New " + titleWord;
