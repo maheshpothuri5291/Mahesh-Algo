@@ -1,0 +1,19 @@
+[Unit]
+Description=Trackers (task/issue/brainstorm tracker)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/register-app
+Environment=REGISTER_HOST=127.0.0.1
+Environment=REGISTER_PORT=8420
+# Persistent, outside the app checkout so a redeploy (git pull / re-copy) never
+# touches the data file. Create this directory once: sudo mkdir -p /var/lib/register-app
+Environment=REGISTER_DB_PATH=/var/lib/register-app/register.db
+ExecStart=/opt/register-app/venv/bin/python /opt/register-app/main.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

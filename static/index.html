@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trackers</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f4f5f7;
+    --surface-3: #e8eaed;
+    --border: #dfe2e6;
+    --border-strong: #c2c7cd;
+    --ink: #1a2027;
+    --ink-dim: #5a6572;
+    --ink-faint: #8b96a3;
+
+    --tasks: #2f63b8;
+    --issues: #bd4433;
+    --brainstorm: #7a5cc2;
+
+    --good: #1f9d64;
+    --warn: #b8790c;
+    --crit: #c0433f;
+
+    --shadow: 0 1px 2px rgba(26,32,39,0.06), 0 8px 20px rgba(26,32,39,0.07);
+    --radius: 8px;
+  }
+  /* White is the only theme, by explicit request — no dark-mode variant. */
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", ui-sans-serif, system-ui, Roboto, sans-serif;
+    line-height: 1.45;
+    font-size: 14.5px;
+  }
+  body.resizing { cursor: col-resize; }
+  body.resizing, body.resizing * { user-select: none; }
+  .id, .ts, input, textarea, select { font-variant-numeric: tabular-nums; }
+  code, .id {
+    font-family: ui-monospace, "Cascadia Code", "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  button { font: inherit; }
+
+  /* ---------- app shell ---------- */
+  .app { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: var(--sidebar-w, 230px);
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    overflow-y: auto;
+  }
+  .brand h1 { margin: 0 0 2px; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand .sub { margin: 0; font-size: 12px; color: var(--ink-dim); }
+
+  .side-tabs { display: flex; flex-direction: column; gap: 4px; }
+  .side-tab {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0 6px 6px 0;
+    padding: 9px 10px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+  .side-tab:hover { background: var(--surface-3); color: var(--ink); }
+  .side-tab:focus-visible { outline: 2px solid var(--tasks); outline-offset: -2px; }
+  .side-tab.active {
+    background: var(--surface);
+    color: var(--tab-accent);
+    border-left-color: var(--tab-accent);
+  }
+  .side-tab[data-type="tasks"] { --tab-accent: var(--tasks); }
+  .side-tab[data-type="issues"] { --tab-accent: var(--issues); }
+  .side-tab[data-type="brainstorming"] { --tab-accent: var(--brainstorm); }
+  .side-tab .count {
+    font-size: 10.5px;
+    font-family: ui-monospace, "Cascadia Code", "SF Mono", "JetBrains Mono", Consolas, monospace;
+    background: var(--surface-3);
+    color: var(--ink-faint);
+    border-radius: 10px;
+    padding: 1px 7px;
+  }
+  .side-tab.active .count { background: color-mix(in srgb, var(--tab-accent) 20%, var(--surface-3)); color: var(--tab-accent); }
+
+  .sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+
+  /* ---------- resizers ---------- */
+  .resizer {
+    flex-shrink: 0;
+    width: 7px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    touch-action: none;
+  }
+  .resizer::after {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0; left: 3px;
+    width: 2px;
+    background: var(--border);
+    transition: background 0.1s ease;
+  }
+  .resizer:hover::after, .resizer.dragging::after { background: var(--border-strong); }
+
+  /* ---------- main ---------- */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+  /* ---------- dashboard (top of the main/middle column, under the Trackers brand) ---------- */
+  .dashboard-wrap {
+    padding: 16px 26px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .dashboard-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+  }
+  .dashboard-grid { display: flex; gap: 16px; flex-wrap: wrap; }
+  .dash-section {
+    flex: 1;
+    min-width: 220px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .dash-section-label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12.5px; font-weight: 700; color: var(--ink); margin-bottom: 8px;
+  }
+  .dash-section-label .dash-count { font-family: ui-monospace, "Cascadia Code", "SF Mono", "JetBrains Mono", Consolas, monospace; color: var(--ink); }
+  .dash-rows { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dash-row {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--ink-dim);
+    background: var(--surface-2); border-radius: 12px; padding: 3px 10px 3px 8px;
+  }
+  .dash-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dash-dot.st-neutral { background: var(--ink-faint); }
+  .dash-dot.st-good { background: var(--good); }
+  .dash-dot.st-warn { background: var(--warn); }
+  .dash-dot.st-crit { background: var(--crit); }
+  .dash-row .dash-count {
+    font-family: ui-monospace, "Cascadia Code", "SF Mono", "JetBrains Mono", Consolas, monospace;
+    color: var(--ink-faint);
+  }
+  .dash-empty { font-size: 11.5px; color: var(--ink-faint); }
+
+  .main-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 26px;
+    border-bottom: 1px solid var(--border);
+  }
+  .main-top h2 { margin: 0; font-size: 19px; font-weight: 700; color: var(--tab-accent, var(--ink)); }
+
+  .board-body { flex: 1; display: flex; min-height: 0; }
+
+  .list-col {
+    width: var(--listcol-w, 380px);
+    flex-shrink: 0;
+    overflow-y: auto;
+    padding: 14px;
+  }
+  .list { display: flex; flex-direction: column; gap: 6px; }
+
+  .list-toolbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+
+  .assignee-filter { display: flex; align-items: center; gap: 8px; }
+  .assignee-filter label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .assignee-filter select {
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    padding: 5px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    flex: 1;
+    min-width: 0;
+  }
+  .assignee-filter select:focus { outline: none; border-color: var(--tab-accent, var(--tasks)); }
+
+  .filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .filter-chip {
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 4px 10px 4px 12px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink-dim);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .filter-chip:hover { background: var(--surface-2); }
+  .filter-chip:focus-visible { outline: 2px solid var(--tasks); outline-offset: 1px; }
+  .filter-chip .fc-count {
+    font-family: ui-monospace, "Cascadia Code", "SF Mono", "JetBrains Mono", Consolas, monospace;
+    font-size: 10px;
+    background: var(--surface-3);
+    color: var(--ink-faint);
+    border-radius: 8px;
+    padding: 1px 6px;
+  }
+  .filter-chip.active {
+    background: color-mix(in srgb, var(--tab-accent) 14%, var(--surface));
+    border-color: var(--tab-accent);
+    color: var(--tab-accent);
+  }
+  .filter-chip.active .fc-count {
+    background: color-mix(in srgb, var(--tab-accent) 22%, var(--surface-3));
+    color: var(--tab-accent);
+  }
+
+  .detail-col { flex: 1; min-width: 0; overflow-y: auto; padding: 26px 30px; }
+  .detail-empty {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-faint);
+    font-size: 13.5px;
+    text-align: center;
+    padding: 40px;
+  }
+
+  @media (max-width: 900px) {
+    .app { flex-direction: column; }
+    .resizer { display: none; }
+    .sidebar { width: 100% !important; flex-direction: row; align-items: center; padding: 12px 16px; overflow-x: auto; }
+    .brand { display: none; }
+    .side-tabs { flex-direction: row; flex: 1; }
+    .side-tab { border-left: none; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; }
+    .side-tab.active { border-left-color: transparent; border-bottom-color: var(--tab-accent); }
+    .sidebar-foot { margin-top: 0; }
+    .dashboard-wrap { padding: 12px 16px; }
+    .board-body { flex-direction: column; }
+    .list-col { width: 100% !important; border-right: none; border-bottom: 1px solid var(--border); max-height: 320px; }
+  }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-decoration: none;
+  }
+  .btn:hover { background: var(--surface-3); }
+  .btn:focus-visible { outline: 2px solid var(--tasks); outline-offset: 2px; }
+  .btn.ghost { background: transparent; }
+  .btn.primary { background: var(--tab-accent, var(--tasks)); border-color: var(--tab-accent, var(--tasks)); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.danger { border-color: var(--crit); color: var(--crit); background: transparent; }
+  .btn.danger:hover { background: var(--crit); color: #fff; }
+  .btn.full { width: 100%; }
+  .icon-btn {
+    background: transparent; border: none; cursor: pointer; color: var(--ink-dim);
+    font-size: 20px; line-height: 1; padding: 4px 8px; border-radius: 4px;
+  }
+  .icon-btn:hover { background: var(--surface-3); color: var(--ink); }
+
+  /* ---------- list rows ---------- */
+  .row {
+    text-align: left;
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--tab-accent);
+    border-radius: 6px;
+    padding: 9px 11px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .row:hover { background: var(--surface-2); }
+  .row:focus-visible { outline: 2px solid var(--tasks); outline-offset: 1px; }
+  .row.selected { background: color-mix(in srgb, var(--tab-accent) 10%, var(--surface)); border-color: var(--tab-accent); }
+  .row .row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .row .row-id { font-size: 10.5px; color: var(--ink-faint); }
+  .row .row-summary { font-weight: 600; font-size: 13.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .row-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-dim); }
+  .row .row-meta-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .row .row-assignee { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .row-updated { color: var(--ink-faint); flex-shrink: 0; }
+
+  .chip {
+    display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.02em; padding: 1px 8px; border-radius: 10px; white-space: nowrap;
+    max-width: 130px; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0;
+  }
+  .chip.st-neutral { background: var(--surface-3); color: var(--ink-dim); }
+  .chip.st-good    { background: color-mix(in srgb, var(--good) 18%, var(--surface)); color: var(--good); }
+  .chip.st-warn    { background: color-mix(in srgb, var(--warn) 20%, var(--surface)); color: var(--warn); }
+  .chip.st-crit    { background: color-mix(in srgb, var(--crit) 18%, var(--surface)); color: var(--crit); }
+
+  .empty-list { color: var(--ink-faint); font-size: 13px; padding: 18px 6px; text-align: center; }
+
+  /* ---------- detail panel ---------- */
+  .detail-head {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;
+    margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border);
+  }
+  .detail-head .id { color: var(--tab-accent); font-size: 12px; font-weight: 700; }
+  .detail-head .updated { color: var(--ink-faint); font-size: 11.5px; margin-top: 2px; }
+
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block; font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px;
+  }
+  .field input[type="text"], .field textarea, .field select {
+    width: 100%; font: inherit; font-size: 14px; color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 9px 11px; resize: vertical;
+  }
+  .field input[type="text"]:focus, .field textarea:focus, .field select:focus {
+    outline: none; border-color: var(--tab-accent); background: var(--surface);
+  }
+  .field.summary input { font-size: 16px; font-weight: 600; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 560px) { .field-row { grid-template-columns: 1fr; } }
+
+  .detail-actions {
+    display: flex; justify-content: space-between; gap: 10px; margin-top: 22px;
+    padding-top: 16px; border-top: 1px solid var(--border);
+  }
+  .detail-actions .right { display: flex; gap: 10px; }
+  .save-hint { font-size: 12px; color: var(--ink-faint); align-self: center; }
+
+  /* ---------- modal ---------- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(20,24,30,0.45);
+    display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 50;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: var(--surface); border-radius: 10px; box-shadow: var(--shadow);
+    width: 100%; max-width: 480px; max-height: 88vh; display: flex; flex-direction: column;
+    border: 1px solid var(--border);
+  }
+  .modal-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 18px; border-bottom: 1px solid var(--border);
+  }
+  .modal-head h3 { margin: 0; font-size: 16px; color: var(--tab-accent); }
+  .modal-body { padding: 18px; overflow-y: auto; }
+  .modal-actions {
+    display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ---------- toast ---------- */
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(12px);
+    background: var(--ink); color: var(--bg); font-size: 13px; font-weight: 600;
+    padding: 9px 16px; border-radius: 8px; box-shadow: var(--shadow);
+    opacity: 0; pointer-events: none; transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 60;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { background: var(--crit); color: #fff; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.001ms !important; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <h1>Trackers</h1>
+        <p class="sub">Local tracker &middot; SQLite</p>
+      </div>
+      <nav class="side-tabs" id="side-tabs">
+        <button class="side-tab" data-type="tasks" type="button">Tasks <span class="count" id="count-tasks">0</span></button>
+        <button class="side-tab" data-type="issues" type="button">Issues <span class="count" id="count-issues">0</span></button>
+        <button class="side-tab" data-type="brainstorming" type="button">Brainstorming <span class="count" id="count-brainstorming">0</span></button>
+      </nav>
+      <div class="sidebar-foot">
+        <a class="btn ghost full" href="/api/export.csv">Export CSV</a>
+      </div>
+    </aside>
+
+    <div class="resizer" id="resizer-sidebar" title="Drag to resize"></div>
+
+    <main class="main">
+      <div class="dashboard-wrap">
+        <div class="dashboard-label">Dashboard</div>
+        <div class="dashboard-grid" id="dashboard"></div>
+      </div>
+      <div class="main-top">
+        <h2 id="board-title">Tasks</h2>
+        <button id="btn-new" class="btn primary" type="button">+ Create</button>
+      </div>
+      <div class="board-body">
+        <section class="list-col" id="list-col">
+          <div class="list-toolbar" id="list-toolbar">
+            <div class="assignee-filter" id="assignee-filter-wrap">
+              <label for="assignee-filter-select">Assignee</label>
+              <select id="assignee-filter-select"></select>
+            </div>
+            <div id="filter-row" class="filter-row"></div>
+          </div>
+          <div id="list" class="list"></div>
+        </section>
+
+        <div class="resizer" id="resizer-list" title="Drag to resize"></div>
+
+        <section class="detail-col" id="detail-col"></section>
+      </div>
+    </main>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head">
+        <h3 id="modal-title">New Task</h3>
+        <button class="icon-btn" id="modal-close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="modal-cancel" type="button">Cancel</button>
+        <button class="btn primary" id="modal-create" type="button">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var TYPES = ["tasks", "issues", "brainstorming"];
+  var TYPE_META = {
+    tasks:         { label: "Tasks",         accentVar: "--tasks",      fields: ["summary", "description", "assignee", "status", "comments"] },
+    issues:        { label: "Issues",        accentVar: "--issues",     fields: ["summary", "description", "assignee", "status", "comments"] },
+    brainstorming: { label: "Brainstorming", accentVar: "--brainstorm", fields: ["summary", "description", "mom"] }
+  };
+  var FIELD_LABELS = {
+    summary: "Summary", description: "Description", assignee: "Assignee",
+    status: "Status", comments: "Comments", mom: "MOM (Minutes of Meeting)"
+  };
+  var STATUS_OPTIONS = {
+    tasks: ["Not Started", "In Progress", "Done"],
+    issues: ["Open", "Investigating", "In Progress", "Resolved"]
+  };
+  var DEFAULT_STATUS = { tasks: "Not Started", issues: "Open" };
+  var ASSIGNEE_OPTIONS = ["None", "Naresh", "Sandeep", "Kishore", "Mahesh"];
+
+  var activeType = "tasks";
+  var itemsByType = { tasks: [], issues: [], brainstorming: [] };
+  var selectedId = { tasks: null, issues: null, brainstorming: null };
+  var pendingDeleteId = null;
+  // "all" | "__none__" (no status set) | an exact status string. Per-board so
+  // switching tabs doesn't lose the filter you had set on the other one.
+  var statusFilter = { tasks: "all", issues: "all", brainstorming: "all" };
+  // "all" | one of ASSIGNEE_OPTIONS. Same per-board memory as statusFilter.
+  var assigneeFilter = { tasks: "all", issues: "all", brainstorming: "all" };
+
+  // ---------------- DOM helper ----------------
+
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    attrs = attrs || {};
+    Object.keys(attrs).forEach(function (k) {
+      if (k === "class") node.className = attrs[k];
+      else if (k === "text") node.textContent = attrs[k];
+      else if (k.indexOf("on") === 0 && typeof attrs[k] === "function") node.addEventListener(k.slice(2), attrs[k]);
+      else node.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (c) { if (c) node.appendChild(c); });
+    return node;
+  }
+
+  // ---------------- API ----------------
+
+  function api(method, path, body) {
+    var opts = { method: method, headers: {} };
+    if (body !== undefined) {
+      opts.headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    }
+    return fetch(path, opts).then(function (res) {
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (j) {
+          throw new Error(j.detail || (res.status + " " + res.statusText));
+        });
+      }
+      if (res.status === 204) return null;
+      return res.json();
+    });
+  }
+
+  // ---------------- helpers ----------------
+
+  function statusVariant(text) {
+    var t = (text || "").trim().toLowerCase();
+    if (!t) return "neutral";
+    if (/(done|resolved|complete|closed)/.test(t)) return "good";
+    if (/(progress|investigat|review)/.test(t)) return "warn";
+    if (/(block|stuck|urgent|critical)/.test(t)) return "crit";
+    return "neutral";
+  }
+
+  function formatRelative(iso) {
+    var then = new Date(iso).getTime();
+    var diff = Math.max(0, Date.now() - then);
+    var min = Math.floor(diff / 60000);
+    if (min < 1) return "just now";
+    if (min < 60) return min + "m ago";
+    var hr = Math.floor(min / 60);
+    if (hr < 24) return hr + "h ago";
+    var day = Math.floor(hr / 24);
+    if (day < 7) return day + "d ago";
+    return new Date(then).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  var toastTimer = null;
+  function toast(msg, isErr) {
+    var t = document.getElementById("toast");
+    t.textContent = msg;
+    t.className = "toast show" + (isErr ? " err" : "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.className = "toast"; }, 3000);
+  }
+
+  // ---------------- dashboard ----------------
+
+  function renderDashboard() {
+    var host = document.getElementById("dashboard");
+    host.innerHTML = "";
+
+    ["tasks", "issues"].forEach(function (type) {
+      var items = itemsByType[type] || [];
+      var counts = {};
+      items.forEach(function (item) {
+        var key = (item.status || "").trim() || "No status";
+        counts[key] = (counts[key] || 0) + 1;
+      });
+      // Known statuses first, in their usual order, then any custom text the
+      // user typed, then "No status" last.
+      var order = STATUS_OPTIONS[type].slice();
+      Object.keys(counts).forEach(function (k) {
+        if (k !== "No status" && order.indexOf(k) === -1) order.push(k);
+      });
+      if (counts["No status"]) order.push("No status");
+
+      var section = el("div", { class: "dash-section" }, [
+        el("div", { class: "dash-section-label" }, [
+          el("span", { text: TYPE_META[type].label }),
+          el("span", { class: "dash-count", text: String(items.length) })
+        ])
+      ]);
+
+      if (items.length === 0) {
+        section.appendChild(el("div", { class: "dash-empty", text: "No " + TYPE_META[type].label.toLowerCase() + " yet." }));
+      } else {
+        var rows = el("div", { class: "dash-rows" });
+        order.forEach(function (status) {
+          if (!counts[status]) return;
+          rows.appendChild(el("div", { class: "dash-row" }, [
+            el("span", { class: "dash-dot st-" + statusVariant(status === "No status" ? "" : status) }),
+            el("span", { class: "dash-name", text: status }),
+            el("span", { class: "dash-count", text: String(counts[status]) })
+          ]));
+        });
+        section.appendChild(rows);
+      }
+
+      host.appendChild(section);
+    });
+  }
+
+  // ---------------- sidebar / tabs ----------------
+
+  function renderCounts() {
+    TYPES.forEach(function (t) {
+      document.getElementById("count-" + t).textContent = itemsByType[t].length;
+    });
+  }
+
+  function renderTabs() {
+    document.querySelectorAll(".side-tab").forEach(function (btn) {
+      btn.classList.toggle("active", btn.dataset.type === activeType);
+    });
+    var accent = "var(" + TYPE_META[activeType].accentVar + ")";
+    document.querySelector(".main-top").style.setProperty("--tab-accent", accent);
+    document.getElementById("board-title").textContent = TYPE_META[activeType].label;
+    document.getElementById("board-title").style.setProperty("--tab-accent", accent);
+    document.getElementById("btn-new").style.setProperty("--tab-accent", accent);
+  }
+
+  function switchTab(type) {
+    activeType = type;
+    renderTabs();
+    renderList();
+    renderDetail();
+  }
+
+  // ---------------- data load ----------------
+
+  function loadAll() {
+    return Promise.all(TYPES.map(function (t) {
+      return api("GET", "/api/" + t).then(function (rows) { itemsByType[t] = rows; });
+    })).then(function () {
+      renderCounts();
+      renderDashboard();
+      renderList();
+      renderDetail();
+    }).catch(function (err) {
+      toast("Couldn't load data: " + err.message, true);
+    });
+  }
+
+  function refreshType(type) {
+    return api("GET", "/api/" + type).then(function (rows) {
+      itemsByType[type] = rows;
+      renderCounts();
+      renderDashboard();
+      if (type === activeType) { renderList(); renderDetail(); }
+    });
+  }
+
+  // ---------------- filters (status chips + assignee dropdown) ----------------
+
+  function renderFilters() {
+    var toolbar = document.getElementById("list-toolbar");
+    var hasFilters = TYPE_META[activeType].fields.indexOf("status") !== -1;
+    if (!hasFilters) { toolbar.style.display = "none"; return; }
+    toolbar.style.display = "flex";
+
+    var assigneeSel = document.getElementById("assignee-filter-select");
+    assigneeSel.value = assigneeFilter[activeType];
+
+    var row = document.getElementById("filter-row");
+    row.innerHTML = "";
+
+    var items = itemsByType[activeType] || [];
+    var counts = {};   // status text -> count; "" bucket = no status set
+    items.forEach(function (item) {
+      var key = (item.status || "").trim();
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    var distinct = Object.keys(counts)
+      .filter(function (k) { return k !== ""; })
+      .sort(function (a, b) { return a.localeCompare(b); });
+
+    // If the active filter's status no longer appears in the data (its last
+    // record was deleted or re-statused), fall back to "all" rather than
+    // silently showing an empty list.
+    var current = statusFilter[activeType];
+    if (current !== "all" && current !== "__none__" && distinct.indexOf(current) === -1) {
+      current = statusFilter[activeType] = "all";
+    }
+
+    row.style.display = distinct.length === 0 && !counts[""] ? "none" : "flex";
+
+    var chips = [{ value: "all", label: "All", count: items.length }];
+    distinct.forEach(function (s) { chips.push({ value: s, label: s, count: counts[s] }); });
+    if (counts[""]) chips.push({ value: "__none__", label: "No status", count: counts[""] });
+
+    chips.forEach(function (c) {
+      row.appendChild(el("button", {
+        class: "filter-chip" + (current === c.value ? " active" : ""),
+        type: "button",
+        onclick: function () { statusFilter[activeType] = c.value; renderList(); }
+      }, [
+        el("span", { text: c.label }),
+        el("span", { class: "fc-count", text: String(c.count) })
+      ]));
+    });
+  }
+
+  // ---------------- list ----------------
+
+  function renderList() {
+    renderFilters();
+
+    var list = document.getElementById("list");
+    list.innerHTML = "";
+    var items = itemsByType[activeType] || [];
+    var totalCount = items.length;
+
+    var sFilter = statusFilter[activeType];
+    if (sFilter && sFilter !== "all") {
+      items = items.filter(function (item) {
+        var key = (item.status || "").trim();
+        return sFilter === "__none__" ? key === "" : key === sFilter;
+      });
+    }
+    var aFilter = assigneeFilter[activeType];
+    if (aFilter && aFilter !== "all") {
+      items = items.filter(function (item) {
+        var a = (item.assignee || "").trim();
+        return aFilter === "None" ? (a === "" || a === "None") : a === aFilter;
+      });
+    }
+
+    if (items.length === 0) {
+      var msg = totalCount === 0
+        ? "No " + TYPE_META[activeType].label.toLowerCase() + " yet — create the first one."
+        : "No records match these filters.";
+      list.appendChild(el("div", { class: "empty-list", text: msg }));
+      return;
+    }
+
+    var hasStatus = TYPE_META[activeType].fields.indexOf("status") !== -1;
+
+    items.forEach(function (item) {
+      var summaryEl = el("span", { class: "row-summary", text: item.summary || "(untitled)" });
+      var updatedEl = el("span", { class: "row-updated ts", text: formatRelative(item.updated_at) });
+      var leftGroup;
+      if (hasStatus) {
+        var assigneeEl = el("span", { class: "row-assignee", text: item.assignee || "None" });
+        var chipEl = el("span", { class: "chip st-" + statusVariant(item.status), text: item.status || "no status" });
+        leftGroup = el("div", { class: "row-meta-left" }, [assigneeEl, chipEl]);
+      } else {
+        leftGroup = el("div", { class: "row-meta-left" });
+      }
+      var row = el("button", {
+        class: "row" + (selectedId[activeType] === item.id ? " selected" : ""),
+        type: "button",
+        onclick: function () { selectItem(item.id); }
+      }, [
+        el("div", { class: "row-top" }, [summaryEl, el("span", { class: "row-id id", text: item.code })]),
+        el("div", { class: "row-meta" }, [leftGroup, updatedEl])
+      ]);
+      list.appendChild(row);
+    });
+  }
+
+  function findItem(type, id) {
+    return (itemsByType[type] || []).find(function (i) { return i.id === id; });
+  }
+
+  // ---------------- detail panel (view/edit existing) ----------------
+
+  function selectItem(id) {
+    selectedId[activeType] = id;
+    renderList();
+    renderDetail();
+  }
+
+  function renderDetail() {
+    var pane = document.getElementById("detail-col");
+    pane.innerHTML = "";
+    var id = selectedId[activeType];
+    var item = id ? findItem(activeType, id) : null;
+
+    if (!item) {
+      pane.appendChild(el("div", { class: "detail-empty", text: "Click a record in the list to view and edit it here." }));
+      return;
+    }
+
+    var draft = {};
+    TYPE_META[activeType].fields.forEach(function (f) { draft[f] = item[f] || ""; });
+
+    var head = el("div", { class: "detail-head" }, [
+      el("div", {}, [
+        el("div", { class: "id", text: item.code }),
+        el("div", { class: "updated ts", text: "Updated " + formatRelative(item.updated_at) + "  ·  Created " + formatRelative(item.created_at) })
+      ])
+    ]);
+    pane.appendChild(head);
+
+    var fields = TYPE_META[activeType].fields;
+    fields.forEach(function (name) {
+      if (name === "summary") {
+        pane.appendChild(buildField(draft, name, "text", true));
+      } else if (name === "assignee") {
+        return; // paired with status below
+      } else if (name === "status") {
+        pane.appendChild(el("div", { class: "field-row" }, [
+          buildField(draft, "assignee", "select", false, ASSIGNEE_OPTIONS),
+          buildField(draft, "status", "text", false, STATUS_OPTIONS[activeType])
+        ]));
+      } else {
+        pane.appendChild(buildField(draft, name, "textarea", false));
+      }
+    });
+
+    var hint = el("span", { class: "save-hint", id: "save-hint", text: "" });
+    var actions = el("div", { class: "detail-actions" }, [
+      el("button", { class: "btn danger", type: "button", text: "Delete", onclick: function (ev) { onDeleteClick(ev, item); } }),
+      el("div", { class: "right" }, [
+        hint,
+        el("button", { class: "btn primary", type: "button", text: "Save", onclick: function () { onSaveDetail(item, draft); } })
+      ])
+    ]);
+    pane.appendChild(actions);
+  }
+
+  // `options` is either select choices (kind "select") or datalist suggestions
+  // for a free-text field (kind "text"); textareas ignore it.
+  function buildField(draft, name, kind, isSummary, options) {
+    var wrap = el("div", { class: "field" + (isSummary ? " summary" : "") });
+    var inputId = "f-" + name;
+    wrap.appendChild(el("label", { for: inputId, text: FIELD_LABELS[name] || name }));
+    var input;
+    if (kind === "textarea") {
+      input = el("textarea", { id: inputId, rows: name === "description" ? "4" : "3" });
+      input.value = draft[name] || "";
+    } else if (kind === "select") {
+      input = el("select", { id: inputId });
+      (options || []).forEach(function (opt) { input.appendChild(el("option", { value: opt, text: opt })); });
+      var current = draft[name] || "";
+      // Preserve a legacy value that predates this fixed option list, rather
+      // than silently swapping it out from under an existing record.
+      if (current && options.indexOf(current) === -1) {
+        input.insertBefore(el("option", { value: current, text: current }), input.firstChild);
+      }
+      if (!current) current = options[0];
+      draft[name] = current;
+      input.value = current;
+    } else {
+      var attrs = { id: inputId, type: "text" };
+      if (options) {
+        var listId = inputId + "-list";
+        attrs.list = listId;
+        var dl = el("datalist", { id: listId });
+        options.forEach(function (opt) { dl.appendChild(el("option", { value: opt })); });
+        wrap.appendChild(dl);
+      }
+      input = el("input", attrs);
+      input.value = draft[name] || "";
+    }
+    input.addEventListener(kind === "select" ? "change" : "input", function () { draft[name] = input.value; });
+    wrap.insertBefore(input, wrap.querySelector("datalist") || null);
+    return wrap;
+  }
+
+  function onSaveDetail(item, draft) {
+    var payload = {};
+    TYPE_META[activeType].fields.forEach(function (f) { payload[f] = draft[f]; });
+    api("PUT", "/api/" + activeType + "/" + item.id, payload)
+      .then(function () {
+        toast("Saved.");
+        return refreshType(activeType);
+      })
+      .catch(function (err) { toast("Save failed: " + err.message, true); });
+  }
+
+  function onDeleteClick(ev, item) {
+    var btn = ev.currentTarget;
+    if (pendingDeleteId === item.id) {
+      pendingDeleteId = null;
+      api("DELETE", "/api/" + activeType + "/" + item.id)
+        .then(function () {
+          selectedId[activeType] = null;
+          toast("Deleted.");
+          return refreshType(activeType);
+        })
+        .catch(function (err) { toast("Delete failed: " + err.message, true); });
+      return;
+    }
+    pendingDeleteId = item.id;
+    btn.textContent = "Confirm delete?";
+    setTimeout(function () {
+      if (pendingDeleteId === item.id) {
+        pendingDeleteId = null;
+        if (btn.isConnected) btn.textContent = "Delete";
+      }
+    }, 3000);
+  }
+
+  // ---------------- create modal ----------------
+
+  var modalDraft = {};
+
+  function openCreateModal() {
+    modalDraft = {};
+    TYPE_META[activeType].fields.forEach(function (f) { modalDraft[f] = ""; });
+    if (DEFAULT_STATUS[activeType] !== undefined) modalDraft.status = DEFAULT_STATUS[activeType];
+    if (TYPE_META[activeType].fields.indexOf("assignee") !== -1) modalDraft.assignee = "None";
+
+    var titleWord = TYPE_META[activeType].label.replace(/s$/, "");
+    document.getElementById("modal-title").textContent = "New " + titleWord;
+    document.getElementById("modal-title").style.setProperty("--tab-accent", "var(" + TYPE_META[activeType].accentVar + ")");
+    document.getElementById("modal-create").style.setProperty("--tab-accent", "var(" + TYPE_META[activeType].accentVar + ")");
+
+    var body = document.getElementById("modal-body");
+    body.innerHTML = "";
+    var fields = TYPE_META[activeType].fields;
+    fields.forEach(function (name) {
+      if (name === "summary") {
+        body.appendChild(buildModalField(name, "text", true));
+      } else if (name === "assignee") {
+        return;
+      } else if (name === "status") {
+        body.appendChild(el("div", { class: "field-row" }, [
+          buildModalField("assignee", "select", false, ASSIGNEE_OPTIONS),
+          buildModalField("status", "text", false, STATUS_OPTIONS[activeType])
+        ]));
+      } else {
+        body.appendChild(buildModalField(name, "textarea", false));
+      }
+    });
+
+    document.getElementById("modal-overlay").classList.remove("hidden");
+    var first = body.querySelector("input, textarea");
+    if (first) first.focus();
+  }
+
+  function buildModalField(name, kind, isSummary, options) {
+    var wrap = el("div", { class: "field" + (isSummary ? " summary" : "") });
+    var inputId = "m-" + name;
+    wrap.appendChild(el("label", { for: inputId, text: FIELD_LABELS[name] || name }));
+    var input;
+    if (kind === "textarea") {
+      input = el("textarea", { id: inputId, rows: name === "description" ? "4" : "3" });
+      input.value = modalDraft[name] || "";
+    } else if (kind === "select") {
+      input = el("select", { id: inputId });
+      (options || []).forEach(function (opt) { input.appendChild(el("option", { value: opt, text: opt })); });
+      input.value = modalDraft[name] || options[0];
+    } else {
+      var attrs = { id: inputId, type: "text" };
+      if (options) {
+        var listId = inputId + "-list";
+        attrs.list = listId;
+        var dl = el("datalist", { id: listId });
+        options.forEach(function (opt) { dl.appendChild(el("option", { value: opt })); });
+        wrap.appendChild(dl);
+      }
+      input = el("input", attrs);
+      input.value = modalDraft[name] || "";
+    }
+    input.addEventListener(kind === "select" ? "change" : "input", function () { modalDraft[name] = input.value; });
+    wrap.insertBefore(input, wrap.querySelector("datalist") || null);
+    return wrap;
+  }
+
+  function closeModal() {
+    document.getElementById("modal-overlay").classList.add("hidden");
+  }
+
+  function submitCreate() {
+    var payload = {};
+    TYPE_META[activeType].fields.forEach(function (f) { payload[f] = modalDraft[f] || ""; });
+    api("POST", "/api/" + activeType, payload)
+      .then(function (created) {
+        closeModal();
+        toast("Created " + created.code + ".");
+        return refreshType(activeType).then(function () {
+          selectedId[activeType] = created.id;
+          renderList();
+          renderDetail();
+        });
+      })
+      .catch(function (err) { toast("Create failed: " + err.message, true); });
+  }
+
+  // ---------------- column resizers ----------------
+
+  function makeResizable(handleId, targetEl, cssVar, min, max) {
+    var handle = document.getElementById(handleId);
+    handle.addEventListener("pointerdown", function (ev) {
+      var startX = ev.clientX;
+      var startWidth = targetEl.getBoundingClientRect().width;
+      handle.classList.add("dragging");
+      document.body.classList.add("resizing");
+      handle.setPointerCapture(ev.pointerId);
+
+      function onMove(e) {
+        var next = Math.min(max, Math.max(min, startWidth + (e.clientX - startX)));
+        document.documentElement.style.setProperty(cssVar, next + "px");
+      }
+      function onUp() {
+        handle.classList.remove("dragging");
+        document.body.classList.remove("resizing");
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+      }
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+    });
+  }
+
+  // ---------------- wire up ----------------
+
+  document.querySelectorAll(".side-tab").forEach(function (btn) {
+    btn.addEventListener("click", function () { switchTab(btn.dataset.type); });
+  });
+  document.getElementById("btn-new").addEventListener("click", openCreateModal);
+  document.getElementById("modal-close").addEventListener("click", closeModal);
+  document.getElementById("modal-cancel").addEventListener("click", closeModal);
+  document.getElementById("modal-create").addEventListener("click", submitCreate);
+  document.getElementById("modal-overlay").addEventListener("click", function (ev) {
+    if (ev.target.id === "modal-overlay") closeModal();
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !document.getElementById("modal-overlay").classList.contains("hidden")) closeModal();
+  });
+
+  (function initAssigneeFilterSelect() {
+    var sel = document.getElementById("assignee-filter-select");
+    sel.appendChild(el("option", { value: "all", text: "All" }));
+    ASSIGNEE_OPTIONS.forEach(function (a) { sel.appendChild(el("option", { value: a, text: a })); });
+    sel.addEventListener("change", function () {
+      assigneeFilter[activeType] = sel.value;
+      renderList();
+    });
+  })();
+
+  makeResizable("resizer-sidebar", document.getElementById("sidebar"), "--sidebar-w", 170, 380);
+  makeResizable("resizer-list", document.getElementById("list-col"), "--listcol-w", 260, 640);
+
+  renderTabs();
+  loadAll();
+})();
+</script>
+</body>
+</html>

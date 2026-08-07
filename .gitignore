@@ -1,0 +1,6 @@
+register.db
+register.db-wal
+register.db-shm
+register.db-journal
+__pycache__/
+venv/
