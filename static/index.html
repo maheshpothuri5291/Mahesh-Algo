@@ -364,6 +364,33 @@
     outline: none; border-color: var(--tab-accent); background: var(--surface);
   }
   .field.summary input { font-size: 16px; font-weight: 600; }
+
+  /* Click-anywhere dropdown for free-text fields (Status) -- see attachCombo().
+     The menu itself is a single shared node parked on <body> and positioned
+     with position:fixed, so .detail-col / .modal-body's overflow-y:auto can't
+     clip it and it stacks above the modal (z-index 50). */
+  .combo { position: relative; }
+  .combo input[type="text"] { padding-right: 28px; cursor: pointer; }
+  .combo-caret {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    font-size: 10px; color: var(--ink-faint); pointer-events: none;
+  }
+  .combo-menu {
+    position: fixed; z-index: 70; overflow-y: auto; padding: 4px;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: 6px; box-shadow: var(--shadow);
+  }
+  .combo-menu.hidden { display: none; }
+  .combo-opt {
+    padding: 7px 10px; border-radius: 4px; font-size: 14px; color: var(--ink);
+    cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .combo-opt:hover, .combo-opt.active { background: var(--surface-2); }
+  /* Marks the option the field currently holds, without needing --tab-accent,
+     which doesn't reach the menu now that it lives on <body>. */
+  .combo-opt.sel { font-weight: 600; }
+  .combo-opt.sel::after { content: "\2713"; float: right; padding-left: 12px; color: var(--ink-faint); }
+
   .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   @media (max-width: 560px) { .field-row { grid-template-columns: 1fr; } }
 
@@ -794,6 +821,7 @@
 
   function renderDetail() {
     var pane = document.getElementById("detail-col");
+    closeCombo();   // the field this menu belongs to is about to be torn down
     pane.innerHTML = "";
     var id = selectedId[activeType];
     var item = id ? findItem(activeType, id) : null;
@@ -841,16 +869,181 @@
     pane.appendChild(actions);
   }
 
-  // `options` is either select choices (kind "select") or datalist suggestions
-  // for a free-text field (kind "text"); textareas ignore it.
+  // ---------------- combobox (free-text field + click-anywhere dropdown) ----------------
+  //
+  // Replaces the native <datalist> that Status used to use. Two reasons it had
+  // to go: the list only dropped from the tiny arrow glyph, not from a click on
+  // the field, and browsers filter a datalist down to substring matches of
+  // whatever is already in the box -- so a record with a status set (i.e. every
+  // record, both boards default one) opened a list of exactly one item. This is
+  // a real dropdown: click anywhere in the field and every option is listed.
+  //
+  // The field stays an <input type="text">, so a custom or legacy status that
+  // isn't in STATUS_OPTIONS can still be typed and still round-trips on save.
+
+  var comboMenu = null;     // single shared menu node -- only one can be open at a time
+  var comboOpen = null;     // { input, options, commit, filter } of the open combo
+  var comboActive = -1;     // keyboard cursor into comboShown
+  var comboShown = [];      // options currently rendered in the menu
+
+  function ensureComboMenu() {
+    if (!comboMenu) {
+      comboMenu = el("div", { class: "combo-menu hidden", role: "listbox" });
+      document.body.appendChild(comboMenu);
+    }
+    return comboMenu;
+  }
+
+  function closeCombo() {
+    if (comboMenu) comboMenu.classList.add("hidden");
+    if (comboOpen) comboOpen.input.setAttribute("aria-expanded", "false");
+    comboOpen = null;
+    comboActive = -1;
+    comboShown = [];
+  }
+
+  function positionComboMenu() {
+    var r = comboOpen.input.getBoundingClientRect();
+    var menu = ensureComboMenu();
+    var below = window.innerHeight - r.bottom;
+    // Flip above the field when the field sits low in a short panel.
+    var up = below < 150 && r.top > below;
+    menu.style.left = r.left + "px";
+    menu.style.width = r.width + "px";
+    menu.style.maxHeight = Math.max(90, Math.min(240, (up ? r.top : below) - 12)) + "px";
+    menu.style.top = up ? "auto" : (r.bottom + 4) + "px";
+    menu.style.bottom = up ? (window.innerHeight - r.top + 4) + "px" : "auto";
+  }
+
+  function renderComboMenu() {
+    var menu = ensureComboMenu();
+    var q = (comboOpen.filter || "").trim().toLowerCase();
+    // A click passes no filter, so the full list always shows; typing narrows it.
+    comboShown = q
+      ? comboOpen.options.filter(function (o) { return o.toLowerCase().indexOf(q) !== -1; })
+      : comboOpen.options.slice();
+    if (comboShown.length === 0) { menu.classList.add("hidden"); return; }
+
+    var current = (comboOpen.input.value || "").trim().toLowerCase();
+    var curIdx = -1;
+    comboShown.forEach(function (o, i) { if (o.toLowerCase() === current) curIdx = i; });
+    if (comboActive < 0 || comboActive >= comboShown.length) comboActive = curIdx;
+
+    menu.innerHTML = "";
+    comboShown.forEach(function (opt, i) {
+      menu.appendChild(el("div", {
+        class: "combo-opt" + (i === curIdx ? " sel" : "") + (i === comboActive ? " active" : ""),
+        role: "option",
+        text: opt,
+        // mousedown, not click: a click would let the input blur first.
+        onmousedown: function (ev) { ev.preventDefault(); pickCombo(opt); }
+      }));
+    });
+    menu.classList.remove("hidden");
+    var active = menu.querySelector(".combo-opt.active");
+    if (active) active.scrollIntoView({ block: "nearest" });
+  }
+
+  function openCombo(input, options, commit, filter) {
+    comboOpen = { input: input, options: options, commit: commit, filter: filter || "" };
+    comboActive = -1;
+    positionComboMenu();
+    renderComboMenu();
+    if (comboMenu.classList.contains("hidden")) { comboOpen = null; return; }
+    input.setAttribute("aria-expanded", "true");
+  }
+
+  function pickCombo(value) {
+    var c = comboOpen;
+    if (!c) return;
+    c.input.value = value;
+    c.commit(value);
+    closeCombo();
+    c.input.focus();
+  }
+
+  // Wraps `input` in a click-anywhere dropdown of `options` and returns the
+  // wrapper to mount. Owns the input's "input" listener, so callers must not
+  // add their own -- `commit` is called for both typing and picking.
+  function attachCombo(input, options, commit) {
+    var combo = el("div", { class: "combo" }, [input]);
+    // The caret is pointer-events:none, so clicks on it land on the input below.
+    combo.appendChild(el("span", { class: "combo-caret", "aria-hidden": "true", text: "▾" }));
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-expanded", "false");
+
+    // Tied to real visibility, not just to `comboOpen`: typing text that matches
+    // no option hides the menu while this combo is still the open one, and a
+    // click after that should re-open it rather than be eaten as a "close".
+    function isOpen() {
+      return !!comboOpen && comboOpen.input === input &&
+             !!comboMenu && !comboMenu.classList.contains("hidden");
+    }
+
+    input.addEventListener("click", function () {
+      if (isOpen()) closeCombo();
+      else openCombo(input, options, commit, "");
+    });
+    input.addEventListener("input", function () {
+      commit(input.value);
+      comboActive = -1;
+      if (!isOpen()) { openCombo(input, options, commit, input.value); return; }
+      comboOpen.filter = input.value;
+      positionComboMenu();
+      renderComboMenu();
+    });
+    input.addEventListener("keydown", function (ev) {
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault();
+        if (!isOpen()) { openCombo(input, options, commit, ""); return; }
+        if (!comboShown.length) return;
+        comboActive = ev.key === "ArrowDown"
+          ? (comboActive + 1) % comboShown.length
+          : (comboActive <= 0 ? comboShown.length : comboActive) - 1;
+        renderComboMenu();
+      } else if (ev.key === "Enter" && isOpen() && comboShown[comboActive]) {
+        ev.preventDefault();
+        pickCombo(comboShown[comboActive]);
+      } else if (ev.key === "Escape" && isOpen()) {
+        ev.stopPropagation();   // don't let the modal's Escape handler fire too
+        closeCombo();
+      } else if (ev.key === "Tab") {
+        closeCombo();
+      }
+    });
+    return combo;
+  }
+
+  document.addEventListener("mousedown", function (ev) {
+    if (!comboOpen) return;
+    var field = comboOpen.input.parentNode;
+    if (comboMenu.contains(ev.target) || (field && field.contains(ev.target))) return;
+    closeCombo();
+  });
+  // Capture phase, so scrolling .detail-col / .modal-body counts too -- the menu
+  // is position:fixed and would otherwise hang detached from its field. Scrolling
+  // *within* the menu is excluded: scrollIntoView() below fires a scroll event on
+  // it, which would otherwise slam the menu shut the instant it opened.
+  document.addEventListener("scroll", function (ev) {
+    if (comboMenu && ev.target === comboMenu) return;
+    closeCombo();
+  }, true);
+  window.addEventListener("resize", closeCombo);
+
+  // `options` is either select choices (kind "select") or dropdown options for
+  // a free-text combobox field (kind "text"); textareas ignore it.
   function buildField(draft, name, kind, isSummary, options) {
     var wrap = el("div", { class: "field" + (isSummary ? " summary" : "") });
     var inputId = "f-" + name;
     wrap.appendChild(el("label", { for: inputId, text: FIELD_LABELS[name] || name }));
-    var input;
+    function commit(v) { draft[name] = v; }
+    var input, mount;
     if (kind === "textarea") {
       input = el("textarea", { id: inputId, rows: name === "description" ? "4" : "3" });
       input.value = draft[name] || "";
+      input.addEventListener("input", function () { commit(input.value); });
+      mount = input;
     } else if (kind === "select") {
       input = el("select", { id: inputId });
       (options || []).forEach(function (opt) { input.appendChild(el("option", { value: opt, text: opt })); });
@@ -863,20 +1056,19 @@
       if (!current) current = options[0];
       draft[name] = current;
       input.value = current;
+      input.addEventListener("change", function () { commit(input.value); });
+      mount = input;
     } else {
-      var attrs = { id: inputId, type: "text" };
-      if (options) {
-        var listId = inputId + "-list";
-        attrs.list = listId;
-        var dl = el("datalist", { id: listId });
-        options.forEach(function (opt) { dl.appendChild(el("option", { value: opt })); });
-        wrap.appendChild(dl);
-      }
-      input = el("input", attrs);
+      input = el("input", { id: inputId, type: "text" });
       input.value = draft[name] || "";
+      if (options) {
+        mount = attachCombo(input, options, commit);   // owns its own input listener
+      } else {
+        input.addEventListener("input", function () { commit(input.value); });
+        mount = input;
+      }
     }
-    input.addEventListener(kind === "select" ? "change" : "input", function () { draft[name] = input.value; });
-    wrap.insertBefore(input, wrap.querySelector("datalist") || null);
+    wrap.appendChild(mount);
     return wrap;
   }
 
@@ -919,6 +1111,7 @@
   var modalDraft = {};
 
   function openCreateModal() {
+    closeCombo();
     modalDraft = {};
     TYPE_META[activeType].fields.forEach(function (f) { modalDraft[f] = ""; });
     if (DEFAULT_STATUS[activeType] !== undefined) modalDraft.status = DEFAULT_STATUS[activeType];
@@ -956,32 +1149,35 @@
     var wrap = el("div", { class: "field" + (isSummary ? " summary" : "") });
     var inputId = "m-" + name;
     wrap.appendChild(el("label", { for: inputId, text: FIELD_LABELS[name] || name }));
-    var input;
+    function commit(v) { modalDraft[name] = v; }
+    var input, mount;
     if (kind === "textarea") {
       input = el("textarea", { id: inputId, rows: name === "description" ? "4" : "3" });
       input.value = modalDraft[name] || "";
+      input.addEventListener("input", function () { commit(input.value); });
+      mount = input;
     } else if (kind === "select") {
       input = el("select", { id: inputId });
       (options || []).forEach(function (opt) { input.appendChild(el("option", { value: opt, text: opt })); });
       input.value = modalDraft[name] || options[0];
+      input.addEventListener("change", function () { commit(input.value); });
+      mount = input;
     } else {
-      var attrs = { id: inputId, type: "text" };
-      if (options) {
-        var listId = inputId + "-list";
-        attrs.list = listId;
-        var dl = el("datalist", { id: listId });
-        options.forEach(function (opt) { dl.appendChild(el("option", { value: opt })); });
-        wrap.appendChild(dl);
-      }
-      input = el("input", attrs);
+      input = el("input", { id: inputId, type: "text" });
       input.value = modalDraft[name] || "";
+      if (options) {
+        mount = attachCombo(input, options, commit);   // owns its own input listener
+      } else {
+        input.addEventListener("input", function () { commit(input.value); });
+        mount = input;
+      }
     }
-    input.addEventListener(kind === "select" ? "change" : "input", function () { modalDraft[name] = input.value; });
-    wrap.insertBefore(input, wrap.querySelector("datalist") || null);
+    wrap.appendChild(mount);
     return wrap;
   }
 
   function closeModal() {
+    closeCombo();
     document.getElementById("modal-overlay").classList.add("hidden");
   }
 

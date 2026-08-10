@@ -8,6 +8,10 @@ trading system in the rest of this repo; nothing here touches it.
 
 - **Tasks** / **Issues** — Summary, Description, Assignee (dropdown: Unassigned / Naresh /
   Sandeep / Kishore / Mahesh), Status, Comments
+  - Status options are **Not Started / In Progress / Done / Cancelled** for Tasks and
+    **Open / Investigating / In Progress / Resolved / Cancelled** for Issues. Clicking
+    anywhere in the Status field lists every option; it's still a text field, so a
+    custom status can be typed and older custom values are preserved.
 - **Brainstorming** — Summary, Description, MOM (Minutes of Meeting)
 
 Left sidebar leads with a **Dashboard** — Tasks and Issues counts broken down by
