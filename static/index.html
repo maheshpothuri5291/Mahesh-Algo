@@ -309,6 +309,14 @@
   .row {
     text-align: left;
     width: 100%;
+    /* Explicit, because .row is a <button> and the `button` reset above only
+       inherits `font`, not `color`. Without this the row falls back to the UA's
+       `buttontext`, which `color-scheme: light dark` renders near-white on a
+       dark-mode OS -- invisible against this row's hard-coded white background.
+       .row-summary was the only child without its own colour, so it was the one
+       that disappeared; the rest (.row-id/.row-meta/.row-updated/.chip) set
+       their own and override this. */
+    color: var(--ink);
     background: var(--surface);
     border: 1px solid var(--border);
     border-left: 3px solid var(--tab-accent);
